@@ -76,18 +76,18 @@ Keep the product as a single `SKILL.md`; do not add runtime machinery.
 **Files:**
 - Modify: `docs/superpowers/plans/2026-08-26-quiz-time-skill.md`
 
-- [ ] **Step 1: Mark completed plan steps**
+- [x] **Step 1: Mark completed plan steps**
 
 Update checkboxes to reflect the verified work.
 
-- [ ] **Step 2: Run final verification**
+- [x] **Step 2: Run final verification**
 
 Run structural validation, placeholder scans, `git diff --check`, and inspect `git status`.
 
-- [ ] **Step 3: Commit the implementation**
+- [x] **Step 3: Commit the implementation**
 
 Commit the plan, evaluation notes, and `quiz-time/SKILL.md` together.
 
-- [ ] **Step 4: Create the GitHub repository and push**
+- [x] **Step 4: Create the GitHub repository and push**
 
 Use the embedded GitHub CLI to create `horacioh/quizz-time-skill` and push the current branch without creating a release.
