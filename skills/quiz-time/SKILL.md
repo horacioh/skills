@@ -1,6 +1,7 @@
 ---
 name: quiz-time
 description: Use when a developer wants to verify their understanding of a codebase, especially after AI-assisted changes or while becoming familiar with a repository.
+license: Apache-2.0
 ---
 
 # Quiz Time
