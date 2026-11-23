@@ -1,0 +1,465 @@
+{
+  "tier": "medium",
+  "tldr": "A legacy server on custom GHCR images redeployed in full on every nightly run and never left its old `0 2 * * *` cron. This PR fixes both from inside the normal cron run, with no manual steps.",
+  "summary": {
+    "goal": "Let a legacy `/opt/seed` install using custom GHCR images take the cheap **no-change** path and run on the current `*/10` schedule.",
+    "change": "The image check now compares against `web_image`/`site_image` via `expectedServiceImages`. A new `migrateLegacyCron` rewrites old crons during a headless deploy. A new `resolveBunPath` gives cron an absolute bun path.",
+    "why": "The server only ever runs `upgrade` + `deploy` from cron, so the fix has to apply itself there. Every migration step backs off rather than leave cron pointing at a missing or stale script."
+  },
+  "blocks": [
+    {
+      "id": "flow",
+      "type": "diagram",
+      "nav": "Nightly run",
+      "title": "What one headless cron run does now",
+      "lede": "`cmdDeploy` now runs a migration before `deploy()`. Inside `deploy()`, the no-change check reads the configured images.",
+      "direction": "DOWN",
+      "nodes": [
+        {
+          "id": "cron",
+          "label": "crontab line",
+          "sub": "`# seed-deploy`",
+          "kind": "job"
+        },
+        {
+          "id": "script",
+          "label": "deploy.js headless run",
+          "kind": "cli",
+          "children": [
+            {
+              "id": "cmd",
+              "label": "`cmdDeploy`",
+              "sub": "headless branch",
+              "kind": "function",
+              "status": "changed",
+              "ref": "ops/deploy.ts",
+              "symbol": "async function cmdDeploy"
+            },
+            {
+              "id": "mig",
+              "label": "`migrateLegacyCron`",
+              "sub": "try/catch, never fails deploy",
+              "kind": "function",
+              "status": "added",
+              "ref": "ops/deploy.ts",
+              "symbol": "export async function migrateLegacyCron"
+            },
+            {
+              "id": "setup",
+              "label": "`setupCron`",
+              "kind": "function",
+              "status": "changed",
+              "ref": "ops/deploy.ts",
+              "symbol": "export async function setupCron"
+            },
+            {
+              "id": "wrap",
+              "label": "`installWrapper`",
+              "kind": "function",
+              "status": "changed",
+              "ref": "ops/deploy.ts",
+              "symbol": "export function installWrapper"
+            },
+            {
+              "id": "bun",
+              "label": "`resolveBunPath`",
+              "sub": "`command -v bun` ‖ `process.execPath`",
+              "kind": "function",
+              "status": "added",
+              "ref": "ops/deploy.ts",
+              "symbol": "export function resolveBunPath"
+            },
+            {
+              "id": "deploy",
+              "label": "`deploy()`",
+              "sub": "no-change fast path",
+              "kind": "function",
+              "ref": "ops/deploy.ts",
+              "symbol": "export async function deploy("
+            },
+            {
+              "id": "match",
+              "label": "`containersMatchReleaseChannel`",
+              "kind": "function",
+              "status": "changed",
+              "ref": "ops/deploy.ts",
+              "symbol": "export function containersMatchReleaseChannel"
+            },
+            {
+              "id": "exp",
+              "label": "`expectedServiceImages`",
+              "sub": "`web_image ‖ seedhypermedia/web:<channel>`",
+              "kind": "config",
+              "ref": "ops/deploy.ts",
+              "symbol": "export function expectedServiceImages"
+            }
+          ]
+        },
+        {
+          "id": "fixed",
+          "label": "`/usr/local/lib/seed/deploy.js`",
+          "sub": "fixed script path",
+          "kind": "file"
+        },
+        {
+          "id": "tab",
+          "label": "new crontab",
+          "sub": "`*/10` deploy + hourly prune",
+          "kind": "state"
+        },
+        {
+          "id": "docker",
+          "label": "running containers",
+          "sub": "`docker inspect` image",
+          "kind": "service"
+        }
+      ],
+      "edges": [
+        {
+          "from": "cron",
+          "to": "cmd",
+          "label": "runs"
+        },
+        {
+          "from": "cmd",
+          "to": "mig",
+          "label": "first",
+          "status": "added"
+        },
+        {
+          "from": "mig",
+          "to": "fixed",
+          "label": "copy if missing/different",
+          "status": "added"
+        },
+        {
+          "from": "mig",
+          "to": "setup",
+          "status": "added"
+        },
+        {
+          "from": "mig",
+          "to": "wrap",
+          "status": "added"
+        },
+        {
+          "from": "setup",
+          "to": "bun",
+          "status": "added"
+        },
+        {
+          "from": "wrap",
+          "to": "bun",
+          "status": "added"
+        },
+        {
+          "from": "setup",
+          "to": "tab",
+          "label": "writes"
+        },
+        {
+          "from": "cmd",
+          "to": "deploy",
+          "label": "then"
+        },
+        {
+          "from": "deploy",
+          "to": "match"
+        },
+        {
+          "from": "match",
+          "to": "exp",
+          "label": "now reads",
+          "status": "added"
+        },
+        {
+          "from": "match",
+          "to": "docker",
+          "label": "compares"
+        }
+      ],
+      "tourIntro": "Four steps, in the order the server runs them.",
+      "steps": [
+        {
+          "title": "Cron starts a headless deploy",
+          "text": "The old line still runs the old script: `0 2 * * *` against `/opt/seed/deploy.js`. `upgrade` has already pulled this PR's `dist/deploy.js` into place, so this `deploy` runs the new code.",
+          "focus": [
+            "cron",
+            "cmd"
+          ]
+        },
+        {
+          "title": "Migrate the cron first",
+          "text": "`migrateLegacyCron` runs before `deploy()`, which means before the compose fetch, so a GitHub timeout can't block it. It copies the script to the fixed path, then rewrites cron and the `seed-deploy` wrapper.",
+          "focus": [
+            "cmd",
+            "mig",
+            "fixed",
+            "setup",
+            "wrap",
+            "tab"
+          ]
+        },
+        {
+          "title": "Absolute bun path",
+          "text": "Cron's `PATH` has no `/root/.bun/bin`. The old fallback `/usr/local/bin/bun` doesn't exist on this box, so a migration run from cron would have broken cron for good. Both writers now use `resolveBunPath`.",
+          "focus": [
+            "setup",
+            "wrap",
+            "bun"
+          ]
+        },
+        {
+          "title": "Compare against the configured images",
+          "text": "The no-change check used to expect `seedhypermedia/*:<channel>`, so GHCR containers never matched and every run redeployed. It now asks `expectedServiceImages`, the same fallback the compose file, doctor and rollback use.",
+          "focus": [
+            "deploy",
+            "match",
+            "exp",
+            "docker"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "match-code",
+      "type": "code",
+      "nav": "Image check",
+      "file": "ops/deploy.ts",
+      "title": "Bug 1: the image check ignored `web_image` / `site_image`",
+      "lede": "With a fork's web image configured, the hard-coded upstream image names could never match. The fast path was skipped on every run.",
+      "pick": {
+        "from": "export function containersMatchReleaseChannel",
+        "to": "if (got !== expectedImage) return false"
+      },
+      "notes": [
+        {
+          "at": "['seed-web', `seedhypermedia/web:",
+          "text": "The old expectation ignored the config overrides. The server logged `Running containers do not match release channel 'main'` and redeployed every night."
+        },
+        {
+          "at": "expectedServiceImages(config)",
+          "text": "Reuses the existing helper: `web_image || seedhypermedia/web:<channel>`. This is the same fallback the compose file uses, so the check and the deployment can't disagree."
+        }
+      ]
+    },
+    {
+      "id": "guards",
+      "type": "steps",
+      "nav": "Migration guards",
+      "title": "Bug 2: when `migrateLegacyCron` touches the crontab, and when it backs off",
+      "lede": "`setupCron` only runs from the wizard and `seed-deploy cron`, so old installs never moved. The migration rewrites cron only if every check passes.",
+      "items": [
+        {
+          "title": "No `# seed-deploy` line → do nothing",
+          "text": "Seed never installed cron on this box, so the migration doesn't create one.",
+          "ref": "ops/deploy.ts",
+          "find": "if (!deployLine) return"
+        },
+        {
+          "title": "Line belongs to another node → do nothing",
+          "text": "The line must mention this node's `\"<seedDir>/deploy.js\"` or `--dir \"<seedDir>\"`. A manual `--dir <other>` run can't take over the cron.",
+          "ref": "ops/deploy.ts",
+          "find": [
+            "!deployLine.includes(`\"${paths.seedDir}/deploy.js\"`)",
+            "    return"
+          ]
+        },
+        {
+          "title": "Seed lines already current → do nothing",
+          "text": "It compares `extractSeedCronLines` before and after `buildCrontab`, so repeat runs are idempotent.",
+          "ref": "ops/deploy.ts",
+          "find": [
+            "const updated = buildCrontab(existing, paths, bunPath)",
+            "JSON.stringify(extractSeedCronLines(existing))"
+          ]
+        },
+        {
+          "title": "Copy the running script to the fixed path",
+          "text": "Only when the target is missing or its sha256 differs. It tries `mkdir -p && cp`, then the same with `sudo`, then `chown` back to the cron user so unattended `upgrade` can replace the file later.",
+          "ref": "ops/deploy.ts",
+          "status": "added",
+          "find": [
+            "let copyNeeded = false",
+            "sudo chown"
+          ]
+        },
+        {
+          "title": "Copy failed or script missing → warn and leave cron alone",
+          "text": "Cron never points at a missing or stale script. This check came from review findings fixed in `1527c49`.",
+          "ref": "ops/deploy.ts",
+          "find": [
+            "const scriptExists =",
+            "leaving the legacy cron untouched"
+          ]
+        },
+        {
+          "title": "Rewrite cron + wrapper, log the move",
+          "text": "`setupCron` + `installWrapper`, then the log line `Migrated legacy cron (0 2 * * * → */10) to /usr/local/lib/seed/deploy.js.`",
+          "ref": "ops/deploy.ts",
+          "status": "added",
+          "find": [
+            "const oldSchedule = deployLine.trim()",
+            "Migrated legacy cron"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "where",
+      "type": "decision",
+      "nav": "Why in deploy",
+      "title": "Why the migration runs inside the headless deploy",
+      "question": "How does an unattended legacy server get onto the new cron?",
+      "context": "On the unattended server, `upgrade` + `deploy` only run from the old cron.",
+      "options": [
+        {
+          "name": "Ask the operator to run `seed-deploy cron`",
+          "summary": "Keep `setupCron` as the only writer.",
+          "pros": [
+            "No new code path"
+          ],
+          "cons": [
+            "Needs a manual step on every legacy box",
+            "The 02:00 schedule stays until someone remembers"
+          ]
+        },
+        {
+          "name": "Migrate in `cmdDeploy`, before `deploy()`",
+          "chosen": true,
+          "summary": "Self-applying on the next nightly run. Wrapped in try/catch.",
+          "pros": [
+            "No manual steps",
+            "Runs before the compose fetch, so a GitHub timeout can't block it",
+            "Can't fail the deploy itself"
+          ],
+          "cons": [
+            "Code that edits the crontab now runs on every headless deploy, so it needs strict guards (previous section)"
+          ]
+        }
+      ],
+      "why": "From the PR description: \"Both fixes apply themselves through the normal `upgrade` + `deploy` cron run, with no manual steps.\" Migrating before `deploy()` means \"a GitHub fetch timeout can't block it.\"",
+      "source": "https://github.com/horacioh/seed/pull/43"
+    },
+    {
+      "id": "rollout",
+      "type": "steps",
+      "nav": "Rollout",
+      "title": "What the server does on its first run after merge",
+      "items": [
+        {
+          "title": "02:00: `upgrade` on the old path",
+          "text": "Pulls the new `dist/deploy.js` from `custom-images` into `/opt/seed/deploy.js`. `cmdUpgrade` reads `deploy_url` from the `--dir` config, so it still fetches the fork, not upstream S3."
+        },
+        {
+          "title": "`deploy`, now running the new code",
+          "text": "Copies itself to `/usr/local/lib/seed/deploy.js` and rewrites cron to `*/10 … --dir \"/opt/seed\" upgrade …; … deploy … # seed-deploy`. The 4-hourly `prune -a` becomes the stock hourly `docker image prune -f --filter \"until=1h\"`, which keeps tagged images.",
+          "status": "changed"
+        },
+        {
+          "title": "Same run: no-change path",
+          "text": "If compose, env and images are unchanged, it skips the redeploy. From then on it runs every 10 minutes from the fixed path.",
+          "status": "added"
+        }
+      ]
+    },
+    {
+      "id": "files",
+      "type": "files",
+      "nav": "Files",
+      "title": "Files, in reading order",
+      "areas": [
+        {
+          "name": "Deploy script",
+          "files": [
+            {
+              "path": "ops/deploy.ts",
+              "order": 1,
+              "note": "`containersMatchReleaseChannel`, `resolveBunPath`, `migrateLegacyCron`, `cmdDeploy` hook"
+            },
+            {
+              "path": "ops/deploy.test.ts",
+              "order": 2,
+              "note": "3 image-match cases, bun fallback, 6 `migrateLegacyCron` cases (idempotent, other node, copy failure, sudo + chown)"
+            }
+          ]
+        },
+        {
+          "name": "Build output",
+          "why": "what servers download",
+          "files": [
+            {
+              "path": "ops/dist/deploy.js",
+              "note": "rebuilt with the pinned Bun 1.3.10 (CI checks it isn't stale)"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "video": {
+    "voice": "en-US-AndrewNeural",
+    "scenes": [
+      {
+        "say": "One legacy Seed server kept redeploying every night and never moved off its old cron. Here's how this PR fixes both, without anyone logging in."
+      },
+      {
+        "block": "flow",
+        "say": "Every night, cron starts a headless deploy.",
+        "step": 0
+      },
+      {
+        "block": "flow",
+        "step": 1,
+        "say": "First, the new *migrateLegacyCron* runs, before deploy and before any network fetch. It copies the script to a fixed path and rewrites cron."
+      },
+      {
+        "block": "flow",
+        "step": 2,
+        "say": "Cron has no bun on its PATH, so both cron writers now resolve an *absolute bun path*."
+      },
+      {
+        "block": "flow",
+        "step": 3,
+        "say": "Then deploy checks whether the running containers match the config. That check now reads the *configured images* instead of assuming Docker Hub."
+      },
+      {
+        "block": "match-code",
+        "lines": [
+          1,
+          6
+        ],
+        "say": "Before, it expected seedhypermedia images, so GHCR containers *never matched* and every run redeployed."
+      },
+      {
+        "block": "match-code",
+        "lines": [
+          7,
+          10
+        ],
+        "say": "Now it loops over *expectedServiceImages*, the same fallback the compose file uses."
+      },
+      {
+        "block": "guards",
+        "items": [
+          0,
+          1,
+          2
+        ],
+        "say": "The migration does nothing when there's no seed cron, when the line belongs to another node, or when it's already current."
+      },
+      {
+        "block": "guards",
+        "items": [
+          3,
+          4
+        ],
+        "say": "If it can't install the script, it *leaves cron alone*, so cron never points at a missing or stale file."
+      },
+      {
+        "block": "rollout",
+        "say": "On the first run after merge, the server upgrades, migrates itself to every ten minutes, and takes the no-change path."
+      }
+    ]
+  }
+}

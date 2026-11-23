@@ -18,7 +18,27 @@ The quiz:
 - Explains each answer with repository references.
 - Reports whether understanding was demonstrated using a 4/5 threshold.
 
+### [PR Visual Explainer](./skills/pr-visual-explainer/SKILL.md)
+
+Turn a pull request into a self-contained HTML walkthrough with diagrams, annotated diffs, and decision notes. The kit checks excerpts and references against the actual PR and can also render a narrated video.
+
+### [Repro Before/After](./skills/repro-before-after/SKILL.md)
+
+Reproduce a reported bug on the affected target, agree on what success looks like, and verify the same steps on the final code. An optional screenshot manifest lets you bring before/after evidence into a PR Visual Explainer.
+
 ## Installation
+
+### Skills CLI
+
+Install the skill you want with `npx`:
+
+```bash
+npx skills add horacioh/skills --skill quiz-time
+npx skills add horacioh/skills --skill pr-visual-explainer
+npx skills add horacioh/skills --skill repro-before-after
+```
+
+The commands install agent skills; they don't generate an explainer or run a reproduction. Ask your agent to use the installed skill in your project. PR Visual Explainer lists its kit setup and video requirements in its `SKILL.md`.
 
 ### Codex skill installer
 
@@ -34,6 +54,8 @@ https://github.com/horacioh/skills/tree/main/skills/quiz-time
 ### Manual installation
 
 Clone this repository and copy or symlink the skill into your agent's personal skills directory. The shared `.agents/skills` location works with Codex, OpenCode, Gemini CLI, Cursor, Zed, Pi, and other Agent Skills-compatible tools.
+
+Replace `quiz-time` in the examples with the skill you want. Copy the whole directory so any supporting files come with it.
 
 For compatible agents:
 
@@ -61,7 +83,7 @@ cp -R skills/quiz-time ~/.claude/skills/quiz-time
 
 ## Agent compatibility
 
-Quiz Time follows the open [Agent Skills specification](https://agentskills.io/specification). It uses standard `SKILL.md` frontmatter, textual interaction, relative paths, and no agent-specific tools.
+The skills follow the open [Agent Skills specification](https://agentskills.io/specification). They use standard `SKILL.md` frontmatter and no agent-specific tools. The matrix below tracks Quiz Time specifically.
 
 | Agent | Support | Personal installation | Explicit invocation |
 |---|---|---|---|
@@ -84,12 +106,18 @@ Each skill lives in its own directory and is independently readable and installa
 
 ```text
 skills/
-└── quiz-time/
+├── pr-visual-explainer/
+│   ├── SKILL.md
+│   └── kit/
+├── quiz-time/
+│   ├── SKILL.md
+│   └── docs/
+└── repro-before-after/
     ├── SKILL.md
-    └── docs/
+    └── record-pair.mjs
 ```
 
-`SKILL.md` is the usable skill. Supporting design and evaluation notes, when present, live beside that skill under `docs/`.
+`SKILL.md` is the usable skill. Supporting scripts, examples, or notes live beside it.
 
 ## License
 
