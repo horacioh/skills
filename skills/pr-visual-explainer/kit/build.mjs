@@ -7,6 +7,7 @@ import fs from 'node:fs'; import path from 'node:path'; import { execFileSync } 
 import { fileURLToPath, pathToFileURL } from 'node:url'; import { chromium } from 'playwright-core'; import { codeToTokens, bundledLanguages } from 'shiki';
 import { findChrome } from './chrome.mjs';
 import { manifestScreens } from './screens.mjs';
+import { parseDiff } from './diff.mjs';
 
 const KIT = path.dirname(fileURLToPath(import.meta.url));
 const args = process.argv.slice(2); const opt = k => { const i = args.indexOf(k); return i >= 0 ? args[i + 1] : null; };
@@ -25,18 +26,7 @@ if (work) {
 for (const k of ['repo', 'number', 'title', 'headSha', 'baseSha']) if (!spec.pr?.[k]) err(`pr.${k} missing (run collect.sh and pass --work)`);
 const diffText = work && fs.existsSync(path.join(work, 'pr.diff')) ? fs.readFileSync(path.join(work, 'pr.diff'), 'utf8') : null;
 
-// ---- parse the real diff per file: { path: { added:Set, removed:Set } }
-const diffFiles = {};
-if (diffText) {
-  let cur = null;
-  for (const l of diffText.split('\n')) {
-    if (l.startsWith('diff --git')) { const m = l.match(/ b\/(.*)$/); cur = diffFiles[m[1]] = { added: new Set(), removed: new Set(), hunks: [], aPath: l.match(/ a\/(.*?) b\//)?.[1] }; continue; }
-    if (!cur || l.startsWith('+++ ') || l.startsWith('--- ')) continue;
-    if (l.startsWith('@@')) { cur.hunks.push({ header: l, lines: [] }); continue; }
-    if (cur.hunks.length && /^[ +\-]/.test(l)) cur.hunks[cur.hunks.length - 1].lines.push(l);
-    if (l[0] === '+') cur.added.add(l.slice(1).trim()); else if (l[0] === '-') cur.removed.add(l.slice(1).trim());
-  }
-}
+const diffFiles = parseDiff(diffText || '');
 
 
 // Verbatim slice of a real hunk: { hunk: text inside the hunk, from: first line text, to: last line text }
@@ -99,7 +89,7 @@ for (const b of spec.blocks) {
     const ps = new Set((b.participants || []).map(p => p.id));
     (b.messages || []).forEach((m, i) => { if (m.divider || m.note) return; resolveFind(m, `${W} message ${i}`); for (const x of [m.from, m.to]) if (!ps.has(x)) err(`${W}: message ${i} uses unknown participant ${x}`); checkRef(m.ref, `${W} message ${i}`); });
   } else if (b.type === 'code') {
-    const real = diffFiles[b.file];
+    const real = diffFiles.get(b.file);
     if (b.pick && real) b.diff = (Array.isArray(b.pick) ? b.pick : [b.pick]).map((pk, i) => pickHunk(real, pk, `${W} pick ${i + 1}`)).filter(Boolean).join('\n');
     if (!b.file || !b.diff) { err(`${W}: code needs file + pick (or a verbatim diff excerpt from pr.diff)`); continue; }
     if (diffText && !real) err(`${W}: ${b.file} is not changed in this PR`);
