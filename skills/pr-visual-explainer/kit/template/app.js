@@ -71,13 +71,14 @@ const icon = k => `<svg viewBox="0 0 24 24" ${P} aria-hidden="true">${ICONS[k] |
 const BLOCK_ICON = { diagram: 'diagram', sequence: 'sequence', code: 'code', decision: 'decision', steps: 'timeline', files: 'files', compare: 'change', callout: 'note', metrics: 'metric', screens: 'image' };
 
 const gh = `https://github.com/${S.pr.repo}`;
+const fileUrl = (file, base) => `${gh}/blob/${base ? S.pr.baseSha : S.pr.headSha}/${file.split('/').map(encodeURIComponent).join('/')}`;
 function refUrl(ref) {
   if (!ref) return null;
   if (/^https?:/.test(ref)) return ref;
-  let sha = S.pr.headSha, r = ref;
-  if (r.startsWith('base:')) { sha = S.pr.baseSha; r = r.slice(5); }
-  const [path, frag] = r.split('#');
-  return `${gh}/blob/${sha}/${path}${frag ? '#' + frag : ''}`;
+  const base = ref.startsWith('base:');
+  const r = base ? ref.slice(5) : ref;
+  const frag = r.match(/#L\d+(?:-L\d+)?$/)?.[0] || '';
+  return fileUrl(frag ? r.slice(0, -frag.length) : r, base) + frag;
 }
 const refLabel = ref => ref ? ref.replace(/^base:/, '').replace(/#L(\d+)(-L(\d+))?$/, (m, a, b, c) => `:${a}${c ? '–' + c : ''}`) : '';
 
@@ -252,9 +253,9 @@ function fitSequence(fig, b) {
 /* ---------- other blocks ---------- */
 function renderCode(b) {
   const c = $('div', 'card code' + (b.wrap ? ' wrap' : ''));
-  const url = refUrl(b.ref || (b.file && (b.side === 'base' ? 'base:' : '') + b.file));
+  const url = b.ref ? refUrl(b.ref) : fileUrl(b.file, b.side === 'base');
   const adds = b.lines.filter(l => l.t === '+').length, dels = b.lines.filter(l => l.t === '-').length;
-  c.innerHTML = `<div class="c-head">${icon('file').replace('<svg', '<svg width="15" height="15"')}<a href="${url}" target="_blank" rel="noopener">${esc(b.file)}</a>${b.status ? badge(b.status) : ''}<span class="cnt num">${adds ? `<span class="delta-add">+${adds}</span>` : ''}${dels ? `<span class="delta-del">−${dels}</span>` : ''}</span></div>`;
+  c.innerHTML = `<div class="c-head">${icon('file').replace('<svg', '<svg width="15" height="15"')}<a href="${esc(url)}" target="_blank" rel="noopener">${esc(b.file)}</a>${b.status ? badge(b.status) : ''}<span class="cnt num">${adds ? `<span class="delta-add">+${adds}</span>` : ''}${dels ? `<span class="delta-del">−${dels}</span>` : ''}</span></div>`;
   const body = $('div', 'c-body'); const tb = $('table'); const pins = {}; (b.notes || []).forEach((n, i) => (pins[n.line] ??= []).push(i + 1));
   b.lines.forEach((l, i) => {
     const tr = $('tr', l.t === '+' ? 'add' : l.t === '-' ? 'del' : l.t === '…' ? 'gap' : '');
@@ -282,7 +283,7 @@ function renderDecision(b) {
 }
 function renderSteps(b) {
   const ol = $('ol', 'steps');
-  b.items.forEach((s, i) => { const li = $('li', s.status || '', `<div class="st"><h3>${md(s.title)}${s.status ? badge(s.status) : ''}</h3>${s.text ? `<p>${md(s.text)}</p>` : ''}${s.ref ? `<a class="ref" href="${refUrl(s.ref)}" target="_blank" rel="noopener">${esc(refLabel(s.ref))}</a>` : ''}</div>`); li.dataset.id = 'i' + i; ol.append(li); });
+  b.items.forEach((s, i) => { const li = $('li', s.status || '', `<div class="st"><h3>${md(s.title)}${s.status ? badge(s.status) : ''}</h3>${s.text ? `<p>${md(s.text)}</p>` : ''}${s.ref ? `<a class="ref" href="${esc(refUrl(s.ref))}" target="_blank" rel="noopener">${esc(refLabel(s.ref))}</a>` : ''}</div>`); li.dataset.id = 'i' + i; ol.append(li); });
   return ol;
 }
 function renderFiles(b) {
@@ -293,7 +294,7 @@ function renderFiles(b) {
       const dir = f.path.includes('/') ? f.path.slice(0, f.path.lastIndexOf('/') + 1) : ''; const base = f.path.slice(dir.length);
       const r = $('div', 'f-row');
       const pa = Math.max(f.add ? 2 : 0, Math.round(f.add / max * 100)), pd = Math.max(f.del ? 2 : 0, Math.round(f.del / max * 100));
-      r.innerHTML = `<span class="ord num ${f.order ? '' : 'none'}">${f.order || ''}</span><a class="p" href="${refUrl(f.status === 'removed' ? 'base:' + f.path : f.path)}" target="_blank" rel="noopener"><span class="dir">${esc(dir)}</span>${esc(base)}${f.note ? `<small>${md(f.note)}</small>` : ''}</a><span class="ct num">${f.status === 'added' ? badge('added') + ' ' : f.status === 'removed' ? badge('removed') + ' ' : ''}<span class="delta-add">+${f.add}</span> <span class="delta-del">−${f.del}</span></span><span class="bar"><i class="a" style="width:${pa}%"></i><i class="d" style="width:${pd}%"></i></span>`;
+      r.innerHTML = `<span class="ord num ${f.order ? '' : 'none'}">${f.order || ''}</span><a class="p" href="${esc(fileUrl(f.path, f.status === 'removed'))}" target="_blank" rel="noopener"><span class="dir">${esc(dir)}</span>${esc(base)}${f.note ? `<small>${md(f.note)}</small>` : ''}</a><span class="ct num">${f.status === 'added' ? badge('added') + ' ' : f.status === 'removed' ? badge('removed') + ' ' : ''}<span class="delta-add">+${f.add}</span> <span class="delta-del">−${f.del}</span></span><span class="bar"><i class="a" style="width:${pa}%"></i><i class="d" style="width:${pd}%"></i></span>`;
       s.append(r);
     }
     c.append(s);
