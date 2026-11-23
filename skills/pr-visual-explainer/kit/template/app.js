@@ -174,6 +174,7 @@ function fitDiagram(fig, b) {
 
 function focusSets(b, step) {
   if (!step) return null;
+  if (Array.isArray(step)) step = { focus: step };
   const nodes = new Set(step.focus || []); const edges = new Set(step.edges || []);
   if (!step.edges && b.edges) for (const e of b.edges) if (nodes.has(e.from) && nodes.has(e.to)) edges.add(edgeId(e));
   if (b.messages) (step.messages || []).forEach(i => edges.add('m' + i));

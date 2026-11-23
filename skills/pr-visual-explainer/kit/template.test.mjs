@@ -23,3 +23,14 @@ test('file links keep literal quotes and hash signs in the filename', () => {
   assert.match(row, /href="https:\/\/github\.com\/example\/repo\/blob\/base\/docs\/caf%C3%A9%20%22notes%22%23L2\.md"/);
   assert.equal(refUrl('base:docs/café "notes".md#L2-L4'), 'https://github.com/example/repo/blob/base/docs/caf%C3%A9%20%22notes%22.md#L2-L4');
 });
+
+test('direct video focus and tour-step focus select the same nodes and edges', () => {
+  const { focusSets } = loadTemplate('focusSets');
+  const block = { edges: [{ from: 'one', to: 'two' }, { from: 'two', to: 'three' }] };
+  const focus = ['one', 'two'];
+  const direct = focusSets(block, focus);
+  const tour = focusSets(block, { focus });
+  assert.deepEqual([...direct.nodes], focus);
+  assert.equal(direct.edges.size, 1);
+  assert.deepEqual([...direct.edges], [...tour.edges]);
+});
