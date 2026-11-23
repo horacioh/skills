@@ -1,0 +1,17 @@
+{
+  "name": "pr-visuals-kit",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test"
+  },
+  "dependencies": {
+    "@fontsource/inter": "5.2.5",
+    "@fontsource/inter-tight": "5.2.5",
+    "@fontsource/jetbrains-mono": "5.2.5",
+    "elkjs": "0.9.3",
+    "msedge-tts": "2.1.1",
+    "playwright-core": "1.48.2",
+    "shiki": "1.29.2"
+  }
+}
