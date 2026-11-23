@@ -7,7 +7,7 @@ import fs from 'node:fs'; import path from 'node:path'; import { execFileSync } 
 import { fileURLToPath, pathToFileURL } from 'node:url'; import { chromium } from 'playwright-core'; import { codeToTokens, bundledLanguages } from 'shiki';
 import { findChrome } from './chrome.mjs';
 import { manifestScreens } from './screens.mjs';
-import { diffRows, hunkStart, parseDiff } from './diff.mjs';
+import { diffRows, hunkStart, parseDiff, pickHunk } from './diff.mjs';
 
 const KIT = path.dirname(fileURLToPath(import.meta.url));
 const args = process.argv.slice(2); const opt = k => { const i = args.indexOf(k); return i >= 0 ? args[i + 1] : null; };
@@ -27,20 +27,6 @@ for (const k of ['repo', 'number', 'title', 'headSha', 'baseSha']) if (!spec.pr?
 const diffText = work && fs.existsSync(path.join(work, 'pr.diff')) ? fs.readFileSync(path.join(work, 'pr.diff'), 'utf8') : null;
 
 const diffFiles = parseDiff(diffText || '');
-
-
-// Verbatim slice of a real hunk: { hunk: text inside the hunk, from: first line text, to: last line text }
-function pickHunk(real, pk, where) {
-  const h = real.hunks.find(h => (h.header + '\n' + h.lines.join('\n')).includes(pk.hunk || pk.from || ''));
-  if (!h) return err(`${where}: no hunk contains "${pk.hunk || pk.from}"`);
-  let a = pk.from ? h.lines.findIndex(l => l.includes(pk.from)) : 0;
-  if (a < 0) return err(`${where}: "${pk.from}" not in hunk ${h.header}`);
-  let z = pk.to ? h.lines.findIndex((l, i) => i >= a && l.includes(pk.to)) : h.lines.length - 1;
-  if (z < 0) return err(`${where}: "${pk.to}" not after "${pk.from}" in hunk ${h.header}`);
-  let [, o, n] = h.header.match(/^@@ -(\d+)(?:,\d+)? \+(\d+)/).map(Number);
-  for (const l of h.lines.slice(0, a)) { if (l[0] !== '+') o++; if (l[0] !== '-') n++; }
-  return `@@ -${o} +${n} @@ ${pk.label || ''}\n` + h.lines.slice(a, z + 1).join('\n');
-}
 
 
 // ref + find -> ref with real line numbers, so prose never cites a guessed range.
@@ -90,7 +76,11 @@ for (const b of spec.blocks) {
     (b.messages || []).forEach((m, i) => { if (m.divider || m.note) return; resolveFind(m, `${W} message ${i}`); for (const x of [m.from, m.to]) if (!ps.has(x)) err(`${W}: message ${i} uses unknown participant ${x}`); checkRef(m.ref, `${W} message ${i}`); });
   } else if (b.type === 'code') {
     const real = diffFiles.get(b.file);
-    if (b.pick && real) b.diff = (Array.isArray(b.pick) ? b.pick : [b.pick]).map((pk, i) => pickHunk(real, pk, `${W} pick ${i + 1}`)).filter(Boolean).join('\n');
+    if (b.pick && real) b.diff = (Array.isArray(b.pick) ? b.pick : [b.pick]).map((pk, i) => {
+      const slice = pickHunk(real, pk);
+      if (!slice) err(`${W} pick ${i + 1}: no hunk matches ${JSON.stringify(pk)}`);
+      return slice;
+    }).filter(Boolean).join('\n');
     if (!b.file || !b.diff) { err(`${W}: code needs file + pick (or a verbatim diff excerpt from pr.diff)`); continue; }
     if (diffText && !real) err(`${W}: ${b.file} is not changed in this PR`);
     const rows = real && !b.pick ? diffRows(real) : null;

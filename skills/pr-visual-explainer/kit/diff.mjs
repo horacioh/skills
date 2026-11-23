@@ -55,3 +55,19 @@ export function diffRows(file) {
   }
   return rows;
 }
+
+export function pickHunk(file, pick) {
+  for (const h of file.hunks) {
+    if (pick.hunk && !(h.header + '\n' + h.lines.join('\n')).includes(pick.hunk)) continue;
+    const start = pick.from ? h.lines.findIndex(line => line.includes(pick.from)) : 0;
+    if (start < 0) continue;
+    const end = pick.to ? h.lines.findIndex((line, i) => i >= start && line.includes(pick.to)) : h.lines.length - 1;
+    if (end < start) continue;
+    let { old, next } = hunkStart(h.header);
+    for (const line of h.lines.slice(0, start)) {
+      if (line[0] !== '+') old++;
+      if (line[0] !== '-') next++;
+    }
+    return `@@ -${old} +${next} @@ ${pick.label || ''}\n` + h.lines.slice(start, end + 1).join('\n');
+  }
+}
