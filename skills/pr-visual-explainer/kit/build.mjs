@@ -85,7 +85,8 @@ for (const b of spec.blocks) {
     if (diffText && !real) err(`${W}: ${b.file} is not changed in this PR`);
     const rows = real && !b.pick ? diffRows(real) : null;
     const lines = []; let o = 0, n = 0, inHunk = false;
-    for (const raw of b.diff.replace(/\n$/, '').split('\n')) {
+    for (const line of b.diff.replace(/\n$/, '').split('\n')) {
+      const raw = line === '' && inHunk ? ' ' : line;
       const h = hunkStart(raw);
       if (h) { if (lines.length) lines.push({ t: '…', text: h.label || '⋯' }); o = h.old; n = h.next; inHunk = true; continue; }
       if (raw === '…' || raw === '...') { lines.push({ t: '…', text: '⋯' }); continue; }

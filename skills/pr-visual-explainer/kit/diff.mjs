@@ -15,7 +15,7 @@ function headerPath(value) {
 export function parseDiff(text) {
   const files = new Map();
   let oldPath, newPath, file, hunk;
-  for (const line of text.split('\n')) {
+  for (const line of text.replace(/\n$/, '').split('\n')) {
     if (line.startsWith('diff --git ')) {
       oldPath = newPath = file = hunk = undefined;
     } else if (line.startsWith('@@ ')) {
@@ -27,8 +27,8 @@ export function parseDiff(text) {
       }
       hunk = { header: line, lines: [] };
       file.hunks.push(hunk);
-    } else if (hunk && /^[ +\-]/.test(line)) {
-      hunk.lines.push(line);
+    } else if (hunk && (line === '' || /^[ +\-]/.test(line))) {
+      hunk.lines.push(line || ' ');
     } else if (!hunk && line.startsWith('--- ')) {
       oldPath = headerPath(line.slice(4));
     } else if (!hunk && line.startsWith('+++ ')) {
