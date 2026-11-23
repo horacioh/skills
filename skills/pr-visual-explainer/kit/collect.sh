@@ -11,8 +11,12 @@ SLUG=${PR_REPO:-$(git remote get-url origin | sed -E 's|\.git$||; s|^.*github\.c
 gh api "repos/$SLUG/pulls/$N" > "$OUT/pr.json"
 read -r BASE_TIP HEAD_SHA < <(node -e 'const p=require(process.argv[1]);console.log(p.base.sha,p.head.sha)' "$OUT/pr.json")
 git fetch -q origin "pull/$N/head" "$BASE_TIP" 2>/dev/null || git fetch -q origin "pull/$N/head"
-git cat-file -e "$BASE_TIP^{commit}" 2>/dev/null || git fetch -q --deepen=500 origin "pull/$N/head"
-BASE_SHA=$(git merge-base "$BASE_TIP" "$HEAD_SHA")
+if ! BASE_SHA=$(git merge-base "$BASE_TIP" "$HEAD_SHA" 2>/dev/null); then
+  if [ "$(git rev-parse --is-shallow-repository)" = true ]; then
+    git fetch -q --unshallow origin "pull/$N/head" "$BASE_TIP" 2>/dev/null || git fetch -q --unshallow origin "pull/$N/head"
+  fi
+  BASE_SHA=$(git merge-base "$BASE_TIP" "$HEAD_SHA")
+fi
 git diff -M --no-color "$BASE_SHA" "$HEAD_SHA" > "$OUT/pr.diff"
 git diff -M --numstat "$BASE_SHA" "$HEAD_SHA" > "$OUT/numstat.tsv"
 git diff -M --name-status "$BASE_SHA" "$HEAD_SHA" > "$OUT/name-status.tsv"
