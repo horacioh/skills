@@ -6,6 +6,7 @@ import fs from 'node:fs'; import path from 'node:path'; import { execFileSync, s
 import { pathToFileURL } from 'node:url'; import { chromium } from 'playwright-core';
 import { findChrome } from './chrome.mjs';
 import { narrate } from './tts.mjs';
+import { timeCaptions } from './captions.mjs';
 const args = process.argv.slice(2); const opt = (k, d) => { const i = args.indexOf(k); return i >= 0 ? args[i + 1] : d; };
 const out = path.resolve(args[0] || 'out'); const fps = +opt('--fps', 30); const theme = opt('--theme', 'light'); const silent = args.includes('--silent');
 for (const tool of ['ffmpeg', 'ffprobe']) {
@@ -42,10 +43,7 @@ for (const s of scenes) {
   const a = track?.duration || 0;
   const lead = s.i === 0 ? .6 : .35; s.start = t; s.audioAt = t + lead;
   s.duration = Math.max(s.hold || 0, a ? lead + a + .75 : (s.block ? 3 : 3.5), s.i === 0 ? 4 : 1.6);
-  const raw = track?.sentences || [];
-  // map spoken sentences back to the caption text (keeps *highlight* marks)
-  const capSents = (s.say || '').match(/[^.!?]+[.!?]+["')]*\s*|[^.!?]+$/g)?.map(x => x.trim()) || [];
-  s.sentences = capSents.map((text, k) => ({ text, start: k === 0 ? s.start : s.audioAt + (raw[k]?.start ?? (a * k / capSents.length)) }));
+  s.sentences = timeCaptions(s, track);
   t += s.duration;
 }
 const total = t + .6;
