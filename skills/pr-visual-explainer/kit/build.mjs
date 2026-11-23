@@ -7,7 +7,7 @@ import fs from 'node:fs'; import path from 'node:path'; import { execFileSync } 
 import { fileURLToPath, pathToFileURL } from 'node:url'; import { chromium } from 'playwright-core'; import { codeToTokens, bundledLanguages } from 'shiki';
 import { findChrome } from './chrome.mjs';
 import { manifestScreens } from './screens.mjs';
-import { parseDiff } from './diff.mjs';
+import { diffRows, hunkStart, parseDiff } from './diff.mjs';
 
 const KIT = path.dirname(fileURLToPath(import.meta.url));
 const args = process.argv.slice(2); const opt = k => { const i = args.indexOf(k); return i >= 0 ? args[i + 1] : null; };
@@ -93,14 +93,15 @@ for (const b of spec.blocks) {
     if (b.pick && real) b.diff = (Array.isArray(b.pick) ? b.pick : [b.pick]).map((pk, i) => pickHunk(real, pk, `${W} pick ${i + 1}`)).filter(Boolean).join('\n');
     if (!b.file || !b.diff) { err(`${W}: code needs file + pick (or a verbatim diff excerpt from pr.diff)`); continue; }
     if (diffText && !real) err(`${W}: ${b.file} is not changed in this PR`);
-    const lines = []; let o = 0, n = 0;
+    const rows = real && !b.pick ? diffRows(real) : null;
+    const lines = []; let o = 0, n = 0, inHunk = false;
     for (const raw of b.diff.replace(/\n$/, '').split('\n')) {
-      const h = raw.match(/^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@(.*)/);
-      if (h) { if (lines.length) lines.push({ t: '…', text: h[3].trim() || '⋯' }); o = +h[1]; n = +h[2]; continue; }
+      const h = hunkStart(raw);
+      if (h) { if (lines.length) lines.push({ t: '…', text: h.label || '⋯' }); o = h.old; n = h.next; inHunk = true; continue; }
       if (raw === '…' || raw === '...') { lines.push({ t: '…', text: '⋯' }); continue; }
+      if (raw === '\\ No newline at end of file') continue;
       const t = raw[0] === '+' ? '+' : raw[0] === '-' ? '-' : ' '; const code = raw.slice(1);
-      if (real && t === '+' && !real.added.has(code.trim())) err(`${W}: added line not in the PR diff: ${code.trim().slice(0, 80)}`);
-      if (real && t === '-' && !real.removed.has(code.trim())) err(`${W}: removed line not in the PR diff: ${code.trim().slice(0, 80)}`);
+      if (rows && (!inHunk || rows.get(`${o}:${n}`) !== raw)) err(`${W}: excerpt row does not match the PR diff at old ${o}, new ${n}: ${raw.slice(0, 80)}`);
       lines.push({ t, code, o: t === '+' ? null : o, n: t === '-' ? null : n }); if (t !== '+') o++; if (t !== '-') n++;
     }
     const lang = b.lang || langOf(b.file);

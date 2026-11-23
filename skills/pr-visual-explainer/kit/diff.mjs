@@ -22,15 +22,13 @@ export function parseDiff(text) {
       const path = newPath ?? oldPath;
       if (path == null) continue;
       if (!file) {
-        file = { hunks: [], added: new Set(), removed: new Set() };
+        file = { hunks: [] };
         files.set(path, file);
       }
       hunk = { header: line, lines: [] };
       file.hunks.push(hunk);
     } else if (hunk && /^[ +\-]/.test(line)) {
       hunk.lines.push(line);
-      if (line[0] === '+') file.added.add(line.slice(1).trim());
-      else if (line[0] === '-') file.removed.add(line.slice(1).trim());
     } else if (!hunk && line.startsWith('--- ')) {
       oldPath = headerPath(line.slice(4));
     } else if (!hunk && line.startsWith('+++ ')) {
@@ -38,4 +36,22 @@ export function parseDiff(text) {
     }
   }
   return files;
+}
+
+export function hunkStart(line) {
+  const m = line.match(/^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@(.*)$/);
+  return m && { old: +m[1], next: +m[2], label: m[3].trim() };
+}
+
+export function diffRows(file) {
+  const rows = new Map();
+  for (const hunk of file.hunks) {
+    let { old, next } = hunkStart(hunk.header);
+    for (const row of hunk.lines) {
+      rows.set(`${old}:${next}`, row);
+      if (row[0] !== '+') old++;
+      if (row[0] !== '-') next++;
+    }
+  }
+  return rows;
 }
